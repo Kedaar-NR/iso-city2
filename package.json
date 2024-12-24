@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "license": "MIT",
+  "description": "Isometric city building game",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
