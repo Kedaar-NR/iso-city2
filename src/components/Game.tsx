@@ -191,17 +191,21 @@ const Sidebar = React.memo(function Sidebar() {
 
 // Memoized TopBar Component
 const TopBar = React.memo(function TopBar() {
-  const { state, setSpeed, setTaxRate } = useGame();
-  const { stats, year, month, speed, taxRate, cityName, notifications } = state;
+  const { state, setSpeed, setTaxRate, isSaving } = useGame();
+  const { stats, year, month, speed, taxRate, cityName } = state;
   
   const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  const [showNotifications, setShowNotifications] = useState(false);
   
   return (
     <div className="h-14 bg-card border-b border-border flex items-center justify-between px-4">
       <div className="flex items-center gap-6">
         <div>
-          <h1 className="text-foreground font-semibold text-sm">{cityName}</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-foreground font-semibold text-sm">{cityName}</h1>
+            {isSaving && (
+              <span className="text-muted-foreground text-xs italic animate-pulse">Saving...</span>
+            )}
+          </div>
           <div className="text-muted-foreground text-xs">{monthNames[month - 1]} {year}</div>
         </div>
         
@@ -261,48 +265,6 @@ const TopBar = React.memo(function TopBar() {
             className="w-16"
           />
           <span className="text-foreground text-xs font-mono w-8">{taxRate}%</span>
-        </div>
-        
-        <div className="relative">
-          <Button
-            onClick={() => setShowNotifications(!showNotifications)}
-            variant="ghost"
-            size="icon-sm"
-            className={notifications.length > 0 ? 'text-amber-400' : ''}
-          >
-            <AlertIcon size={16} />
-            {notifications.length > 0 && (
-              <Badge variant="destructive" className="absolute -top-1 -right-1 h-4 w-4 p-0 text-[10px] flex items-center justify-center">
-                {notifications.length}
-              </Badge>
-            )}
-          </Button>
-          
-          {showNotifications && notifications.length > 0 && (
-            <Card className="absolute top-full right-0 mt-2 w-80 z-50">
-              <CardHeader className="p-3 pb-2 flex flex-row items-center justify-between">
-                <CardTitle className="text-sm">Notifications</CardTitle>
-                <Button variant="ghost" size="icon-sm" onClick={() => setShowNotifications(false)}>
-                  <CloseIcon size={14} />
-                </Button>
-              </CardHeader>
-              <ScrollArea className="max-h-64">
-                <CardContent className="p-0">
-                  {notifications.map((notif, i) => (
-                    <div key={i} className="p-3 border-b border-border last:border-0 flex gap-3">
-                      <span className="text-muted-foreground mt-0.5">
-                        {EVENT_ICON_MAP[notif.icon] || <InfoIcon size={14} />}
-                      </span>
-                      <div>
-                        <div className="text-foreground text-sm font-medium">{notif.title}</div>
-                        <div className="text-muted-foreground text-xs mt-1">{notif.description}</div>
-                      </div>
-                    </div>
-                  ))}
-                </CardContent>
-              </ScrollArea>
-            </Card>
-          )}
         </div>
       </div>
     </div>
@@ -859,6 +821,10 @@ function SettingsPanel() {
                 <span>Grid Size</span>
                 <span className="text-foreground">{gridSize} x {gridSize}</span>
               </div>
+              <div className="flex justify-between text-muted-foreground">
+                <span>Auto-Save</span>
+                <span className="text-green-400">Enabled</span>
+              </div>
             </div>
           </div>
           
@@ -1143,7 +1109,7 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile }: {
           y <= Math.max(dragStartTile.y, dragEndTile.y);
         
         // Draw base tile
-        drawIsometricTile(ctx, screenX, screenY, tile, isHovered || isSelected || isInDragRect);
+        drawIsometricTile(ctx, screenX, screenY, tile, !!(isHovered || isSelected || isInDragRect));
         
         // Draw building if present
         if (tile.building.type !== 'grass' && tile.building.type !== 'empty') {
@@ -1709,7 +1675,7 @@ export default function Game() {
         {state.activePanel === 'settings' && <SettingsPanel />}
         
         <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-muted-foreground text-xs pointer-events-none">
-          Alt+Drag or Middle-click to pan • Scroll to zoom • Drag to place multiple
+          Alt+Drag or Middle-click to pan • Scroll to zoom • Drag zones to create areas • Auto-saves to browser
         </div>
       </div>
     </TooltipProvider>

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { GameProvider } from '@/context/GameContext';
 import Game from '@/components/Game';
@@ -42,8 +42,24 @@ function hasSavedGame(): boolean {
 }
 
 export default function HomePage() {
-  const hasGame = typeof window !== 'undefined' ? hasSavedGame() : false;
-  const [showGame, setShowGame] = useState(hasGame);
+  const [showGame, setShowGame] = useState(false);
+  const [isChecking, setIsChecking] = useState(true);
+
+  // Check for saved game after mount (client-side only)
+  useEffect(() => {
+    setIsChecking(false);
+    if (hasSavedGame()) {
+      setShowGame(true);
+    }
+  }, []);
+
+  if (isChecking) {
+    return (
+      <main className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center">
+        <div className="text-white/60">Loading...</div>
+      </main>
+    );
+  }
 
   if (showGame) {
     return (

@@ -12,7 +12,7 @@ interface BuildingProps {
 }
 
 // Mapping of building types to their PNG image paths and size multipliers
-const BUILDING_IMAGES: Partial<Record<BuildingType, { src: string; tileWidth: number; tileHeight: number }>> = {
+const BUILDING_IMAGES: Partial<Record<BuildingType, { src: string; tileWidth: number; tileHeight: number; scale?: number; verticalOffset?: number }>> = {
   // Residential buildings (1x1)
   house_small: { src: '/assets/buildings/residential.png', tileWidth: 1, tileHeight: 1 },
   house_medium: { src: '/assets/buildings/residential.png', tileWidth: 1, tileHeight: 1 },
@@ -32,7 +32,7 @@ const BUILDING_IMAGES: Partial<Record<BuildingType, { src: string; tileWidth: nu
   warehouse: { src: '/assets/buildings/industrial.png', tileWidth: 1, tileHeight: 1 },
   // Service buildings (1x1)
   fire_station: { src: '/assets/buildings/fire_station.png', tileWidth: 1, tileHeight: 1 },
-  hospital: { src: '/assets/buildings/hospital.png', tileWidth: 1, tileHeight: 1 },
+  hospital: { src: '/assets/buildings/hospital.png', tileWidth: 1, tileHeight: 1, scale: 0.56, verticalOffset: 15 },
   park: { src: '/assets/buildings/park.png', tileWidth: 1, tileHeight: 1 },
   police_station: { src: '/assets/buildings/police_station.png', tileWidth: 1, tileHeight: 1 },
   school: { src: '/assets/buildings/school.png', tileWidth: 1, tileHeight: 1 },
@@ -51,12 +51,14 @@ const ImageBuilding: React.FC<{
   tileWidth?: number; // How many tiles wide this building spans
   tileHeight?: number; // How many tiles tall this building spans
   alt: string;
-}> = ({ src, size = 64, tileWidth = 1, tileHeight = 1, alt }) => {
+  scale?: number; // Optional scale multiplier (default 1.0)
+  verticalOffset?: number; // Optional vertical offset in pixels (positive = up, negative = down)
+}> = ({ src, size = 64, tileWidth = 1, tileHeight = 1, alt, scale = 1.0, verticalOffset = 0 }) => {
   // Calculate image dimensions based on tile size
   // For multi-tile buildings, scale the image accordingly
   const scaledWidth = size * tileWidth;
   const scaledHeight = getTileHeight(size) * tileHeight;
-  const imageSize = Math.max(scaledWidth, scaledHeight) * 1.8;
+  const imageSize = Math.max(scaledWidth, scaledHeight) * 1.8 * scale;
   
   return (
     <div 
@@ -77,7 +79,7 @@ const ImageBuilding: React.FC<{
         style={{
           objectFit: 'contain',
           position: 'absolute',
-          bottom: -scaledHeight * 0.1,
+          bottom: -scaledHeight * 0.1 + verticalOffset,
           left: '50%',
           transform: 'translateX(-50%)',
         }}
@@ -993,7 +995,7 @@ export const BuildingRenderer: React.FC<{
     // Check if we have a PNG image for this building type
     const imageConfig = BUILDING_IMAGES[buildingType];
     if (imageConfig) {
-      return <ImageBuilding src={imageConfig.src} size={size} tileWidth={imageConfig.tileWidth} tileHeight={imageConfig.tileHeight} alt={buildingType} />;
+      return <ImageBuilding src={imageConfig.src} size={size} tileWidth={imageConfig.tileWidth} tileHeight={imageConfig.tileHeight} alt={buildingType} scale={imageConfig.scale} verticalOffset={imageConfig.verticalOffset} />;
     }
     
     // Fallback to SVG-based buildings for types without images

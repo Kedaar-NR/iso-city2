@@ -30,6 +30,7 @@ type GameContextValue = {
   setDisastersEnabled: (enabled: boolean) => void;
   newGame: (name?: string, size?: number) => void;
   hasExistingGame: boolean;
+  isSaving: boolean;
 };
 
 const GameContext = createContext<GameContextValue | null>(null);
@@ -68,12 +69,40 @@ function loadGameState(): GameState | null {
     if (saved) {
       const parsed = JSON.parse(saved);
       // Validate it has essential properties
-      if (parsed.grid && parsed.gridSize && parsed.stats) {
+      if (parsed && 
+          parsed.grid && 
+          Array.isArray(parsed.grid) &&
+          parsed.gridSize && 
+          typeof parsed.gridSize === 'number' &&
+          parsed.stats &&
+          parsed.stats.money !== undefined &&
+          parsed.stats.population !== undefined) {
+        console.log('Game state loaded successfully', { 
+          gridSize: parsed.gridSize, 
+          money: parsed.stats.money,
+          population: parsed.stats.population 
+        });
         return parsed as GameState;
+      } else {
+        console.warn('Invalid game state in localStorage, clearing it', { 
+          hasGrid: !!parsed?.grid,
+          hasGridSize: !!parsed?.gridSize,
+          hasStats: !!parsed?.stats,
+          parsed 
+        });
+        localStorage.removeItem(STORAGE_KEY);
       }
+    } else {
+      console.log('No saved game state found in localStorage');
     }
   } catch (e) {
     console.error('Failed to load game state:', e);
+    // Clear corrupted data
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+    } catch (clearError) {
+      console.error('Failed to clear corrupted game state:', clearError);
+    }
   }
   return null;
 }
@@ -82,9 +111,34 @@ function loadGameState(): GameState | null {
 function saveGameState(state: GameState): void {
   if (typeof window === 'undefined') return;
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    // Validate state before saving
+    if (!state || !state.grid || !state.gridSize || !state.stats) {
+      console.error('Invalid game state, cannot save', { state, hasGrid: !!state?.grid, hasGridSize: !!state?.gridSize, hasStats: !!state?.stats });
+      return;
+    }
+    
+    const serialized = JSON.stringify(state);
+    
+    // Check if data is too large (localStorage has ~5-10MB limit)
+    if (serialized.length > 5 * 1024 * 1024) {
+      console.warn('Game state too large to save, skipping', { size: serialized.length });
+      return;
+    }
+    
+    localStorage.setItem(STORAGE_KEY, serialized);
+    console.log('Game state saved successfully', { 
+      gridSize: state.gridSize, 
+      money: state.stats.money,
+      population: state.stats.population,
+      size: serialized.length 
+    });
   } catch (e) {
-    console.error('Failed to save game state:', e);
+    // Handle quota exceeded errors
+    if (e instanceof DOMException && (e.code === 22 || e.code === 1014)) {
+      console.error('localStorage quota exceeded, cannot save game state');
+    } else {
+      console.error('Failed to save game state:', e);
+    }
   }
 }
 
@@ -99,41 +153,113 @@ function clearGameState(): void {
 }
 
 export function GameProvider({ children }: { children: React.ReactNode }) {
-  const [state, setState] = useState<GameState>(() => {
-    // Try to load from localStorage on initial mount
-    const saved = loadGameState();
-    if (saved) {
-      return saved;
-    }
-    return createInitialGameState(60, 'IsoCity');
-  });
+  // Start with a default state, we'll load from localStorage after mount
+  const [state, setState] = useState<GameState>(() => createInitialGameState(60, 'IsoCity'));
   
   const [hasExistingGame, setHasExistingGame] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const skipNextSaveRef = useRef(false);
+  const hasLoadedRef = useRef(false);
   
-  // Check for existing game on mount
+  // Load game state from localStorage on mount (client-side only)
   useEffect(() => {
     const saved = loadGameState();
-    setHasExistingGame(saved !== null);
+    if (saved) {
+      console.log('Loading saved game state into component');
+      skipNextSaveRef.current = true; // Set skip flag BEFORE updating state
+      setState(saved);
+      setHasExistingGame(true);
+    } else {
+      console.log('No saved game found, using initial state');
+      setHasExistingGame(false);
+    }
+    // Mark as loaded immediately - the skipNextSaveRef will handle skipping the first save
+    hasLoadedRef.current = true;
   }, []);
   
-  // Auto-save game state (debounced)
+  // Track the state that needs to be saved
+  const stateToSaveRef = useRef<GameState | null>(null);
+  const lastSaveTimeRef = useRef<number>(0);
+  const saveIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  
+  // Update the state to save whenever state changes
   useEffect(() => {
-    if (saveTimeoutRef.current) {
-      clearTimeout(saveTimeoutRef.current);
+    if (!hasLoadedRef.current) {
+      return;
     }
     
-    saveTimeoutRef.current = setTimeout(() => {
-      saveGameState(state);
-      setHasExistingGame(true);
-    }, 1000); // Save 1 second after last change
+    if (skipNextSaveRef.current) {
+      skipNextSaveRef.current = false;
+      console.log('Skipping save after initial load');
+      lastSaveTimeRef.current = Date.now();
+      return;
+    }
+    
+    // Store current state for saving (deep copy)
+    stateToSaveRef.current = JSON.parse(JSON.stringify(state));
+  }, [state]);
+  
+  // Separate effect that actually performs saves on an interval
+  useEffect(() => {
+    // Wait for initial load
+    const checkLoaded = setInterval(() => {
+      if (!hasLoadedRef.current) {
+        return;
+      }
+      
+      // Clear the check interval
+      clearInterval(checkLoaded);
+      
+      // Clear any existing save interval
+      if (saveIntervalRef.current) {
+        clearInterval(saveIntervalRef.current);
+      }
+      
+      // Set up interval to save every 3 seconds if there's pending state
+      saveIntervalRef.current = setInterval(() => {
+        // Don't save if we just loaded
+        if (skipNextSaveRef.current) {
+          return;
+        }
+        
+        // Don't save too frequently
+        const timeSinceLastSave = Date.now() - lastSaveTimeRef.current;
+        if (timeSinceLastSave < 2000) {
+          return;
+        }
+        
+        // Don't save if there's no state to save
+        if (!stateToSaveRef.current) {
+          return;
+        }
+        
+        // Perform the save
+        setIsSaving(true);
+        try {
+          console.log('Auto-saving game state...', { 
+            gridSize: stateToSaveRef.current.gridSize,
+            money: stateToSaveRef.current.stats.money,
+            population: stateToSaveRef.current.stats.population
+          });
+          saveGameState(stateToSaveRef.current);
+          lastSaveTimeRef.current = Date.now();
+          setHasExistingGame(true);
+        } catch (error) {
+          console.error('Failed to save game state:', error);
+        } finally {
+          setIsSaving(false);
+        }
+      }, 3000); // Check every 3 seconds
+    }, 100);
     
     return () => {
-      if (saveTimeoutRef.current) {
-        clearTimeout(saveTimeoutRef.current);
+      clearInterval(checkLoaded);
+      if (saveIntervalRef.current) {
+        clearInterval(saveIntervalRef.current);
       }
     };
-  }, [state]);
+  }, []);
 
   // Simulation loop
   useEffect(() => {
@@ -255,6 +381,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     setDisastersEnabled,
     newGame,
     hasExistingGame,
+    isSaving,
   };
 
   return <GameContext.Provider value={value}>{children}</GameContext.Provider>;
