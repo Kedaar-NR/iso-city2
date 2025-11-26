@@ -296,3 +296,4 @@ export const ToolIcons: Partial<Record<Tool, React.FC<IconProps>>> = {
   stadium: TrophyIcon,
   airport: PlaneIcon,
 };
+
