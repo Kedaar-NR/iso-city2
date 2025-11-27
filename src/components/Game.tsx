@@ -4302,16 +4302,21 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile, navig
               const tileWidth = Math.floor(sheetWidth / activePack.cols);
               const tileHeight = Math.floor(sheetHeight / activePack.rows);
               let sourceY = useDenseVariant.row * tileHeight;
+              let sourceH = tileHeight;
               // For mall dense variants (rows 2-3), shift source Y down to avoid capturing
               // content from the row above that bleeds into the cell boundary
               if (buildingType === 'mall') {
                 sourceY += tileHeight * 0.12; // Shift down ~12% to avoid row above
               }
+              // For apartment_high dense variants, add a bit more height to avoid cutoff at bottom
+              if (buildingType === 'apartment_high') {
+                sourceH = tileHeight * 1.05; // Add 5% more height at bottom
+              }
               coords = {
                 sx: useDenseVariant.col * tileWidth,
                 sy: sourceY,
                 sw: tileWidth,
-                sh: tileHeight,
+                sh: sourceH,
               };
             } else {
               // getSpriteCoords handles building type to sprite key mapping
@@ -4421,13 +4426,16 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile, navig
                 verticalPush = destHeight * 0.15;
               }
               // Use state-specific offset if available, then fall back to building-type or sprite-key offsets
-              // Priority: construction > abandoned > building-type > sprite-key
+              // Priority: construction > abandoned > dense > building-type > sprite-key
               let extraOffset = 0;
               if (isUnderConstruction && activePack.constructionVerticalOffsets && spriteKey && spriteKey in activePack.constructionVerticalOffsets) {
                 extraOffset = activePack.constructionVerticalOffsets[spriteKey] * h;
               } else if (isAbandoned && activePack.abandonedVerticalOffsets && buildingType in activePack.abandonedVerticalOffsets) {
                 // Abandoned buildings may need different positioning than normal
                 extraOffset = activePack.abandonedVerticalOffsets[buildingType] * h;
+              } else if (isDenseVariant && activePack.denseVerticalOffsets && buildingType in activePack.denseVerticalOffsets) {
+                // Dense variants may need different positioning than normal
+                extraOffset = activePack.denseVerticalOffsets[buildingType] * h;
               } else if (activePack.buildingVerticalOffsets && buildingType in activePack.buildingVerticalOffsets) {
                 // Building-type-specific offset (for buildings sharing sprites but needing different positioning)
                 extraOffset = activePack.buildingVerticalOffsets[buildingType] * h;

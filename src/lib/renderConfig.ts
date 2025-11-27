@@ -47,6 +47,9 @@ export interface SpritePack {
   // Per-building-type scale adjustments for ABANDONED sprites only
   // Values are multiplied with the normal scale (e.g., 0.7 = 70% of normal size)
   abandonedScales?: Record<string, number>;
+  // Per-building-type vertical offset adjustments for DENSE variant sprites only
+  // These override verticalOffsets when rendering dense variants
+  denseVerticalOffsets?: Record<string, number>;
   // Maps building types to sprite keys in spriteOrder
   buildingToSprite: Record<string, string>;
   // Optional global scale multiplier for all sprites in this pack
@@ -311,13 +314,17 @@ const SPRITE_PACK_SPRITES4: SpritePack = {
     water_tower: 0.0, // Construction water tower shifted down 0.5 tiles from normal (-0.5 + 0.5 = 0.0)
   },
   abandonedVerticalOffsets: {
-    // Abandoned apartments need to shift down ~0.75 tiles from normal position
+    // Abandoned apartments need different positioning than normal
     apartment_low: -0.25, // Normal is -1.0, abandoned shifts down 0.75: -1.0 + 0.75 = -0.25
-    apartment_high: 0.15, // Normal is -0.60, abandoned shifts down 0.75: -0.60 + 0.75 = 0.15
+    apartment_high: -0.15, // Shifted up 0.3 from previous 0.15
   },
   abandonedScales: {
     // Abandoned factory_large needs to be scaled down 30%
     factory_large: 0.7,
+  },
+  denseVerticalOffsets: {
+    // Dense apartment_high needs to shift up ~0.3 tiles from normal position
+    apartment_high: -0.90, // Normal is -0.60, dense shifts up 0.3: -0.60 - 0.3 = -0.90
   },
   buildingToSprite: {
     house_small: 'house_small',
