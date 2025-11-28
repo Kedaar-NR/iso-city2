@@ -554,8 +554,8 @@ export function useVehicleSystems(
 
   const updateCars = useCallback((delta: number) => {
     const { grid: currentGrid, gridSize: currentGridSize, speed: currentSpeed } = worldStateRef.current;
+    // Don't clear cars if grid is temporarily unavailable - just skip update
     if (!currentGrid || currentGridSize <= 0) {
-      carsRef.current = [];
       return;
     }
     
@@ -590,14 +590,33 @@ export function useVehicleSystems(
     
     const updatedCars: Car[] = [];
     for (const car of [...carsRef.current]) {
-      let alive = true;
-      
-      car.age += delta;
-      if (car.age > car.maxAge) {
-        continue;
-      }
-      
-      if (!isRoadTile(currentGrid, currentGridSize, car.tileX, car.tileY)) {
+      // Skip update if car is somehow off the road, but keep it alive
+      const onRoad = isRoadTile(currentGrid, currentGridSize, car.tileX, car.tileY);
+      if (!onRoad) {
+        // Car is off-road - try to find ANY nearby road and teleport there
+        let relocated = false;
+        for (let r = 1; r <= 5 && !relocated; r++) {
+          for (let dy = -r; dy <= r && !relocated; dy++) {
+            for (let dx = -r; dx <= r && !relocated; dx++) {
+              if (Math.abs(dx) === r || Math.abs(dy) === r) {
+                const nx = car.tileX + dx;
+                const ny = car.tileY + dy;
+                if (isRoadTile(currentGrid, currentGridSize, nx, ny)) {
+                  car.tileX = nx;
+                  car.tileY = ny;
+                  car.progress = 0.5;
+                  const opts = getDirectionOptions(currentGrid, currentGridSize, nx, ny);
+                  if (opts.length > 0) {
+                    car.direction = opts[Math.floor(Math.random() * opts.length)];
+                  }
+                  relocated = true;
+                }
+              }
+            }
+          }
+        }
+        // Even if we couldn't relocate, still keep the car
+        updatedCars.push(car);
         continue;
       }
       
@@ -663,33 +682,42 @@ export function useVehicleSystems(
         
         // Check if next tile is a valid road
         if (!isRoadTile(currentGrid, currentGridSize, newTileX, newTileY)) {
-          // Try to turn around instead of dying - find any valid direction from current tile
+          // Can't move forward - turn around on current tile
           const options = getDirectionOptions(currentGrid, currentGridSize, car.tileX, car.tileY);
           if (options.length > 0) {
-            // Pick a random valid direction (preferring not going back the way we came)
+            // Pick any valid direction (preferring not the one we were going)
             const otherOptions = options.filter(d => d !== car.direction);
             const newDir = otherOptions.length > 0 
               ? otherOptions[Math.floor(Math.random() * otherOptions.length)]
               : options[Math.floor(Math.random() * options.length)];
             car.direction = newDir;
-            car.progress = 0.1; // Reset progress to start of tile
+            car.progress = 0.1;
             const baseLaneOffset = 4 + Math.random() * 2;
             const laneSign = (newDir === 'north' || newDir === 'east') ? 1 : -1;
             car.laneOffset = laneSign * baseLaneOffset;
-            break;
           } else {
-            alive = false;
-            break;
+            // No options at all - just stop and wait (maybe road will be rebuilt)
+            car.progress = 0.5;
           }
+          break;
         }
         
+        // Move to the new tile
         car.tileX = newTileX;
         car.tileY = newTileY;
         car.progress -= 1;
         
+        // Pick next direction
         const nextDirection = pickNextDirection(car.direction, currentGrid, currentGridSize, car.tileX, car.tileY);
-        if (!nextDirection) {
-          // Try to find any valid direction instead of dying
+        if (nextDirection) {
+          if (nextDirection !== car.direction) {
+            const baseLaneOffset = 4 + Math.random() * 2;
+            const laneSign = (nextDirection === 'north' || nextDirection === 'east') ? 1 : -1;
+            car.laneOffset = laneSign * baseLaneOffset;
+          }
+          car.direction = nextDirection;
+        } else {
+          // No preferred direction - just pick any valid one
           const options = getDirectionOptions(currentGrid, currentGridSize, car.tileX, car.tileY);
           if (options.length > 0) {
             const newDir = options[Math.floor(Math.random() * options.length)];
@@ -697,24 +725,13 @@ export function useVehicleSystems(
             const baseLaneOffset = 4 + Math.random() * 2;
             const laneSign = (newDir === 'north' || newDir === 'east') ? 1 : -1;
             car.laneOffset = laneSign * baseLaneOffset;
-          } else {
-            alive = false;
-            break;
           }
-        } else {
-          // Update lane offset when direction changes to maintain proper lane
-          if (nextDirection !== car.direction) {
-            const baseLaneOffset = 4 + Math.random() * 2;
-            const laneSign = (nextDirection === 'north' || nextDirection === 'east') ? 1 : -1;
-            car.laneOffset = laneSign * baseLaneOffset;
-          }
-          car.direction = nextDirection;
+          // If no options, car will try again next frame (don't kill it)
         }
       }
       
-      if (alive) {
-        updatedCars.push(car);
-      }
+      // Always keep the car alive - only remove if road was demolished (handled above with continue)
+      updatedCars.push(car);
     }
     
     carsRef.current = updatedCars;
