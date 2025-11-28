@@ -5195,6 +5195,11 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile, isMob
     if (currentSpritePack.parksConstructionSrc) {
       imagesToLoad.push(loadSpriteImage(currentSpritePack.parksConstructionSrc, true));
     }
+    
+    // Also load farms sprite sheet if available
+    if (currentSpritePack.farmsSrc) {
+      imagesToLoad.push(loadSpriteImage(currentSpritePack.farmsSrc, true));
+    }
 
     Promise.all(imagesToLoad)
       .then(() => setImagesLoaded(true))
@@ -6019,9 +6024,10 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile, isMob
           const isAbandoned = tile.building.abandoned === true;
 
           // Use appropriate sprite sheet based on building state
-          // Priority: parks construction > construction > abandoned > parks > dense variants > normal
+          // Priority: parks construction > construction > abandoned > parks > dense variants > farm variants > normal
           let spriteSource = activePack.src;
           let useDenseVariant: { row: number; col: number } | null = null;
+          let useFarmVariant: { row: number; col: number } | null = null;
           let useParksBuilding: { row: number; col: number } | null = null;
           
           // Check if this is a parks building first
@@ -6052,6 +6058,19 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile, isMob
               useDenseVariant = variants[variantIndex];
               spriteSource = activePack.denseSrc;
             }
+          } else if (activePack.farmsSrc && activePack.farmsVariants && activePack.farmsVariants[buildingType]) {
+            // Check if this building type has farm variants available (low-density industrial)
+            const variants = activePack.farmsVariants[buildingType];
+            // Use deterministic random based on tile position to select variant
+            // This ensures the same building always shows the same variant
+            const seed = (tile.x * 31 + tile.y * 17) % 100;
+            // ~50% chance to use a farm variant (when seed < 50)
+            if (seed < 50 && variants.length > 0) {
+              // Select which farm variant to use based on position
+              const variantIndex = (tile.x * 7 + tile.y * 13) % variants.length;
+              useFarmVariant = variants[variantIndex];
+              spriteSource = activePack.farmsSrc;
+            }
           }
 
           const filteredSpriteSheet = imageCache.get(`${spriteSource}_filtered`) || imageCache.get(spriteSource);
@@ -6061,9 +6080,10 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile, isMob
             const sheetWidth = filteredSpriteSheet.naturalWidth || filteredSpriteSheet.width;
             const sheetHeight = filteredSpriteSheet.naturalHeight || filteredSpriteSheet.height;
             
-            // Get sprite coordinates - either from parks, dense variant, or normal mapping
+            // Get sprite coordinates - either from parks, dense variant, farm variant, or normal mapping
             let coords: { sx: number; sy: number; sw: number; sh: number } | null;
             let isDenseVariant = false;
+            let isFarmVariant = false;
             let isParksBuilding = false;
             if (useParksBuilding) {
               isParksBuilding = true;
@@ -6105,6 +6125,21 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile, isMob
               }
               coords = {
                 sx: useDenseVariant.col * tileWidth,
+                sy: sourceY,
+                sw: tileWidth,
+                sh: sourceH,
+              };
+            } else if (useFarmVariant) {
+              isFarmVariant = true;
+              // Calculate coordinates directly from farm variant row/col
+              const farmsCols = activePack.farmsCols || 5;
+              const farmsRows = activePack.farmsRows || 6;
+              const tileWidth = Math.floor(sheetWidth / farmsCols);
+              const tileHeight = Math.floor(sheetHeight / farmsRows);
+              const sourceY = useFarmVariant.row * tileHeight;
+              const sourceH = tileHeight;
+              coords = {
+                sx: useFarmVariant.col * tileWidth,
                 sy: sourceY,
                 sw: tileWidth,
                 sh: sourceH,
@@ -6186,6 +6221,10 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile, isMob
               if (isDenseVariant && activePack.denseScales && buildingType in activePack.denseScales) {
                 scaleMultiplier *= activePack.denseScales[buildingType];
               }
+              // Apply farm-specific scale if building uses farm variant and has custom scale in config
+              if (isFarmVariant && activePack.farmsScales && buildingType in activePack.farmsScales) {
+                scaleMultiplier *= activePack.farmsScales[buildingType];
+              }
               // Apply parks-specific scale if building is from parks sheet and has custom scale in config
               if (isParksBuilding && activePack.parksScales && buildingType in activePack.parksScales) {
                 scaleMultiplier *= activePack.parksScales[buildingType];
@@ -6213,6 +6252,10 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile, isMob
               // Apply parks-specific horizontal offset if available
               if (isParksBuilding && activePack.parksHorizontalOffsets && buildingType in activePack.parksHorizontalOffsets) {
                 horizontalOffset = activePack.parksHorizontalOffsets[buildingType] * w;
+              }
+              // Apply farm-specific horizontal offset if available
+              if (isFarmVariant && activePack.farmsHorizontalOffsets && buildingType in activePack.farmsHorizontalOffsets) {
+                horizontalOffset = activePack.farmsHorizontalOffsets[buildingType] * w;
               }
               drawX += horizontalOffset;
               
@@ -6245,6 +6288,9 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile, isMob
               } else if (isDenseVariant && activePack.denseVerticalOffsets && buildingType in activePack.denseVerticalOffsets) {
                 // Dense variants may need different positioning than normal
                 extraOffset = activePack.denseVerticalOffsets[buildingType] * h;
+              } else if (isFarmVariant && activePack.farmsVerticalOffsets && buildingType in activePack.farmsVerticalOffsets) {
+                // Farm variants may need different positioning than normal
+                extraOffset = activePack.farmsVerticalOffsets[buildingType] * h;
               } else if (activePack.buildingVerticalOffsets && buildingType in activePack.buildingVerticalOffsets) {
                 // Building-type-specific offset (for buildings sharing sprites but needing different positioning)
                 extraOffset = activePack.buildingVerticalOffsets[buildingType] * h;

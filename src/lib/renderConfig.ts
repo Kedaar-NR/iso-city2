@@ -77,6 +77,20 @@ export interface SpritePack {
   // Per-building-type vertical offset adjustments for PARKS CONSTRUCTION sprites only
   // These override parksVerticalOffsets when rendering parks buildings under construction
   parksConstructionVerticalOffsets?: Record<string, number>;
+  // Path to the farms sprite sheet (separate sheet for farm/agricultural buildings)
+  farmsSrc?: string;
+  // Farms layout configuration (columns and rows for the farms sheet)
+  farmsCols?: number;
+  farmsRows?: number;
+  // Farms variants: maps building type to available variants in the farms sheet
+  // Each variant specifies row and column (0-indexed) in the farms sprite sheet
+  farmsVariants?: Record<string, { row: number; col: number }[]>;
+  // Per-building-type vertical offset adjustments for FARMS sprite sheet buildings
+  farmsVerticalOffsets?: Record<string, number>;
+  // Per-building-type horizontal offset adjustments for FARMS sprite sheet buildings
+  farmsHorizontalOffsets?: Record<string, number>;
+  // Per-building-type scale adjustments for FARMS sprite sheet buildings
+  farmsScales?: Record<string, number>;
   // Maps building types to sprite keys in spriteOrder
   buildingToSprite: Record<string, string>;
   // Optional global scale multiplier for all sprites in this pack
@@ -334,6 +348,33 @@ const SPRITE_PACK_SPRITES4: SpritePack = {
     baseball_field_small: -0.55,  // shifted down 0.3 from normal -0.85
     mountain_lodge: -0.55,  // shifted down 0.3 from normal -0.85
   },
+  // Farms sprite sheet configuration (variants for low-density industrial)
+  farmsSrc: '/assets/sprites_red_water_new_farm.png',
+  farmsCols: 5,
+  farmsRows: 6,
+  farmsVariants: {
+    // All 30 farm sprites (6 rows × 5 cols) as variants for 1x1 low-density industrial (factory_small only)
+    factory_small: [
+      // Row 0
+      { row: 0, col: 0 }, { row: 0, col: 1 }, { row: 0, col: 2 }, { row: 0, col: 3 }, { row: 0, col: 4 },
+      // Row 1
+      { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 1, col: 2 }, { row: 1, col: 3 }, { row: 1, col: 4 },
+      // Row 2
+      { row: 2, col: 0 }, { row: 2, col: 1 }, { row: 2, col: 2 }, { row: 2, col: 3 }, { row: 2, col: 4 },
+      // Row 3
+      { row: 3, col: 0 }, { row: 3, col: 1 }, { row: 3, col: 2 }, { row: 3, col: 3 }, { row: 3, col: 4 },
+      // Row 4
+      { row: 4, col: 0 }, { row: 4, col: 1 }, { row: 4, col: 2 }, { row: 4, col: 3 }, { row: 4, col: 4 },
+      // Row 5
+      { row: 5, col: 0 }, { row: 5, col: 1 }, { row: 5, col: 2 }, { row: 5, col: 3 }, { row: 5, col: 4 },
+    ],
+  },
+  farmsVerticalOffsets: {
+    // Adjust these as needed for proper positioning
+    factory_small: -0.25,
+  },
+  farmsHorizontalOffsets: {},
+  farmsScales: {},
   buildingToSprite: {
     house_small: 'house_small',
     house_medium: 'house_medium',
