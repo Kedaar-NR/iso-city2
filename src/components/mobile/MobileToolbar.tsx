@@ -342,11 +342,8 @@ export function MobileToolbar({ onOpenPanel, overlayMode = 'none', setOverlayMod
           >
             {/* City Management section at top */}
             <div className="p-3 border-b border-border">
-              <div className="flex items-center justify-between mb-2">
-                <div className="text-xs text-muted-foreground uppercase tracking-wider">
-                  City Management
-                </div>
-                <span className="text-muted-foreground text-xs font-mono">${stats.money.toLocaleString()}</span>
+              <div className="text-xs text-muted-foreground uppercase tracking-wider mb-2">
+                City Management
               </div>
               <div className="grid grid-cols-5 gap-2">
                 <Button

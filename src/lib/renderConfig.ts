@@ -166,8 +166,8 @@ const SPRITE_PACK_SPRITES4: SpritePack = {
     commercial: -0.4,
     industrial: -0.5, // Shift factories down about half a tile from previous
     factory_small: -0.25, // Shift factory_small down 1/4 tile (relative to others)
-    factory_medium: -0.5, // Same as industrial
-    factory_large: -0.75, // Shift factory_large up slightly
+    factory_medium: -0.3, // Shifted down 0.2 from -0.5
+    factory_large: -0.85, // Shifted up 0.1 from -0.75
     water_tower: -0.5,
     house_medium: -0.3,
     mansion: -0.35,
@@ -185,7 +185,7 @@ const SPRITE_PACK_SPRITES4: SpritePack = {
     power_plant: -0.3, // Shift up
     park: -0.15, // Perfect position
     park_large: -0.85, // Shift up significantly (almost an entire tile)
-    tennis: -0.2, // Shift up a bit
+    tennis: -0.1, // Shift up a bit
     city_hall: -0.6, // Shift up about 0.2 tiles
     amusement_park: -1.5, // Shift up about 1 tile
     space_program: -0.6, // Shift down a bit
@@ -201,7 +201,7 @@ const SPRITE_PACK_SPRITES4: SpritePack = {
     house_small: -0.2, // Shifted up a bit
     house_medium: -0.05, // Was -0.3 from verticalOffsets, shifted down 0.25
     // 2x2 commercial buildings
-    office_low: -0.5, // Shifted down 0.5 tiles from -1.0
+    office_low: -0.7, // Shifted up 0.2 from -0.5
     office_high: -0.7, // Shifted down 0.3 tiles from -1.0
     // 3x3 mall needs to shift up ~1 tile
     mall: -1.0,
@@ -236,6 +236,7 @@ const SPRITE_PACK_SPRITES4: SpritePack = {
   denseVerticalOffsets: {
     // Dense apartment_high shifted down 0.2 tiles from -0.80
     apartment_high: -0.60, // Moved down 0.2 tiles from -0.80
+    factory_large: -1.2, // Dense variant shifted up 0.2
   },
   denseScales: {
     // Dense apartment_high scaled down 10% total (5% more from 0.95)
