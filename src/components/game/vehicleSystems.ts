@@ -1,6 +1,6 @@
 import React, { useCallback, useRef } from 'react';
 import { Car, CarDirection, EmergencyVehicle, EmergencyVehicleType, Pedestrian, PedestrianDestType, WorldRenderState, TILE_WIDTH, TILE_HEIGHT } from './types';
-import { CAR_COLORS, PEDESTRIAN_MIN_ZOOM, DIRECTION_META, PEDESTRIAN_MAX_COUNT, PEDESTRIAN_ROAD_TILE_DENSITY, PEDESTRIAN_SPAWN_BATCH_SIZE, PEDESTRIAN_SPAWN_INTERVAL } from './constants';
+import { CAR_COLORS, CAR_MIN_ZOOM, CAR_MIN_ZOOM_MOBILE, PEDESTRIAN_MIN_ZOOM, PEDESTRIAN_MIN_ZOOM_MOBILE, DIRECTION_META, PEDESTRIAN_MAX_COUNT, PEDESTRIAN_ROAD_TILE_DENSITY, PEDESTRIAN_SPAWN_BATCH_SIZE, PEDESTRIAN_SPAWN_INTERVAL } from './constants';
 import { isRoadTile, getDirectionOptions, pickNextDirection, findPathOnRoads, getDirectionToTile, gridToScreen } from './utils';
 import { findResidentialBuildings, findPedestrianDestinations, findStations, findFires, findRecreationAreas, findEnterableBuildings, SPORTS_TYPES, ACTIVE_RECREATION_TYPES } from './gridFinders';
 import { drawPedestrians as drawPedestriansUtil } from './drawPedestrians';
@@ -646,7 +646,15 @@ export function useVehicleSystems(
   }, []);
 
   const updateCars = useCallback((delta: number) => {
-    const { grid: currentGrid, gridSize: currentGridSize, speed: currentSpeed } = worldStateRef.current;
+    const { grid: currentGrid, gridSize: currentGridSize, speed: currentSpeed, zoom: currentZoom } = worldStateRef.current;
+    
+    // Clear cars if zoomed out too far (use mobile threshold on mobile for better perf)
+    const carMinZoom = isMobile ? CAR_MIN_ZOOM_MOBILE : CAR_MIN_ZOOM;
+    if (currentZoom < carMinZoom) {
+      carsRef.current = [];
+      return;
+    }
+    
     // Don't clear cars if grid is temporarily unavailable - just skip update
     if (!currentGrid || currentGridSize <= 0) {
       return;
@@ -834,13 +842,14 @@ export function useVehicleSystems(
     }
     
     carsRef.current = updatedCars;
-  }, [worldStateRef, carsRef, carSpawnTimerRef, spawnRandomCar, trafficLightTimerRef, isIntersection]);
+  }, [worldStateRef, carsRef, carSpawnTimerRef, spawnRandomCar, trafficLightTimerRef, isIntersection, isMobile]);
 
   const updatePedestrians = useCallback((delta: number) => {
     const { grid: currentGrid, gridSize: currentGridSize, speed: currentSpeed, zoom: currentZoom } = worldStateRef.current;
     
-    // Clear pedestrians if zoomed out too far
-    if (currentZoom < PEDESTRIAN_MIN_ZOOM) {
+    // Clear pedestrians if zoomed out too far (use mobile threshold on mobile for better perf)
+    const pedestrianMinZoom = isMobile ? PEDESTRIAN_MIN_ZOOM_MOBILE : PEDESTRIAN_MIN_ZOOM;
+    if (currentZoom < pedestrianMinZoom) {
       pedestriansRef.current = [];
       return;
     }
@@ -930,7 +939,7 @@ export function useVehicleSystems(
     }
     
     pedestriansRef.current = updatedPedestrians;
-  }, [worldStateRef, gridVersionRef, cachedRoadTileCountRef, pedestriansRef, pedestrianSpawnTimerRef, spawnPedestrian, trafficLightTimerRef]);
+  }, [worldStateRef, gridVersionRef, cachedRoadTileCountRef, pedestriansRef, pedestrianSpawnTimerRef, spawnPedestrian, trafficLightTimerRef, isMobile]);
 
   const drawCars = useCallback((ctx: CanvasRenderingContext2D) => {
     const { offset: currentOffset, zoom: currentZoom, grid: currentGrid, gridSize: currentGridSize } = worldStateRef.current;
@@ -939,6 +948,12 @@ export function useVehicleSystems(
     
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    // Skip drawing cars when zoomed out too far
+    const carMinZoom = isMobile ? CAR_MIN_ZOOM_MOBILE : CAR_MIN_ZOOM;
+    if (currentZoom < carMinZoom) {
+      return;
+    }
     
     if (!currentGrid || currentGridSize <= 0 || carsRef.current.length === 0) {
       return;
@@ -982,14 +997,16 @@ export function useVehicleSystems(
     });
     
     ctx.restore();
-  }, [worldStateRef, carsRef]);
+  }, [worldStateRef, carsRef, isMobile]);
 
   const drawPedestrians = useCallback((ctx: CanvasRenderingContext2D) => {
     const { offset: currentOffset, zoom: currentZoom, grid: currentGrid, gridSize: currentGridSize } = worldStateRef.current;
     const canvas = ctx.canvas;
     const dpr = window.devicePixelRatio || 1;
     
-    if (currentZoom < PEDESTRIAN_MIN_ZOOM) {
+    // Skip drawing pedestrians when zoomed out too far
+    const pedestrianMinZoom = isMobile ? PEDESTRIAN_MIN_ZOOM_MOBILE : PEDESTRIAN_MIN_ZOOM;
+    if (currentZoom < pedestrianMinZoom) {
       return;
     }
     
@@ -1015,7 +1032,7 @@ export function useVehicleSystems(
     drawPedestriansUtil(ctx, pedestriansRef.current, viewBounds, currentZoom, 'non-recreation');
     
     ctx.restore();
-  }, [worldStateRef, pedestriansRef]);
+  }, [worldStateRef, pedestriansRef, isMobile]);
 
   // Draw recreation pedestrians on air canvas (above buildings, smooth animation every frame)
   const drawRecreationPedestrians = useCallback((ctx: CanvasRenderingContext2D) => {
@@ -1023,7 +1040,9 @@ export function useVehicleSystems(
     const canvas = ctx.canvas;
     const dpr = window.devicePixelRatio || 1;
     
-    if (currentZoom < PEDESTRIAN_MIN_ZOOM) {
+    // Skip drawing recreation pedestrians when zoomed out too far
+    const pedestrianMinZoom = isMobile ? PEDESTRIAN_MIN_ZOOM_MOBILE : PEDESTRIAN_MIN_ZOOM;
+    if (currentZoom < pedestrianMinZoom) {
       return;
     }
     
@@ -1048,7 +1067,7 @@ export function useVehicleSystems(
     drawPedestriansUtil(ctx, pedestriansRef.current, viewBounds, currentZoom, 'recreation');
     
     ctx.restore();
-  }, [worldStateRef, pedestriansRef]);
+  }, [worldStateRef, pedestriansRef, isMobile]);
 
   const drawEmergencyVehicles = useCallback((ctx: CanvasRenderingContext2D) => {
     const { offset: currentOffset, zoom: currentZoom, grid: currentGrid, gridSize: currentGridSize } = worldStateRef.current;

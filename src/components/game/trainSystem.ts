@@ -4,8 +4,22 @@
  */
 
 import { Tile } from '@/types/game';
-import { Train, TrainCarriage, CarriageType, TrainType, CarDirection, TILE_WIDTH, TILE_HEIGHT } from './types';
-import { DIRECTION_META, OPPOSITE_DIRECTION } from './constants';
+import { Train, TrainCarriage, CarriageType, TrainType, CarDirection, TILE_WIDTH, TILE_HEIGHT, TrainSmokeParticle } from './types';
+import {
+  DIRECTION_META,
+  OPPOSITE_DIRECTION,
+  TRAIN_SMOKE_PARTICLE_MAX_AGE,
+  TRAIN_SMOKE_SPAWN_INTERVAL,
+  TRAIN_SMOKE_SPAWN_INTERVAL_MOBILE,
+  TRAIN_SMOKE_DRIFT_SPEED,
+  TRAIN_SMOKE_RISE_SPEED,
+  TRAIN_SMOKE_BASE_OPACITY,
+  TRAIN_SMOKE_PARTICLE_SIZE_MIN,
+  TRAIN_SMOKE_PARTICLE_SIZE_MAX,
+  TRAIN_SMOKE_PARTICLE_GROWTH,
+  TRAIN_SMOKE_MAX_PARTICLES,
+  TRAIN_SMOKE_MAX_PARTICLES_MOBILE,
+} from './constants';
 import {
   isRailTile,
   isRailStationTile,
@@ -244,6 +258,8 @@ function createPassengerTrain(
     color: locomotiveColor,
     atStation: false,
     stationWaitTimer: 0,
+    smokeParticles: [], // Passenger trains don't emit smoke (electric)
+    smokeSpawnTimer: 0,
   };
 }
 
@@ -316,6 +332,8 @@ function createFreightTrain(
     color: locomotiveColor,
     atStation: false,
     stationWaitTimer: 0,
+    smokeParticles: [],
+    smokeSpawnTimer: 0,
   };
 }
 
@@ -656,6 +674,7 @@ function getDirectionToTile(fromX: number, fromY: number, toX: number, toY: numb
 /**
  * Update a single train's position and state
  * @param allTrains - All trains in the system for collision detection
+ * @param isMobile - Whether running on mobile (affects smoke particle count)
  */
 export function updateTrain(
   train: Train,
@@ -663,7 +682,8 @@ export function updateTrain(
   speedMultiplier: number,
   grid: Tile[][],
   gridSize: number,
-  allTrains: Train[] = []
+  allTrains: Train[] = [],
+  isMobile: boolean = false
 ): boolean {
   // Update age
   train.age += delta * speedMultiplier;
@@ -757,6 +777,9 @@ export function updateTrain(
   // Update carriage positions (follow the locomotive with delay)
   updateCarriagePositions(train, grid, gridSize);
   
+  // Update smoke particles for freight trains
+  updateTrainSmoke(train, delta, speedMultiplier, grid, gridSize, isMobile);
+  
   return true;
 }
 
@@ -832,6 +855,177 @@ function updateCarriagePositions(
       carriage.direction = carriageDirection;
     }
   }
+}
+
+/**
+ * Update smoke particles for freight train locomotives
+ * Returns the screen position of the locomotive's smokestack for particle spawning
+ */
+function getLocomotiveSmokestackPosition(
+  train: Train,
+  grid: Tile[][],
+  gridSize: number
+): { x: number; y: number; angle: number } | null {
+  const locomotive = train.carriages[0];
+  if (!locomotive || locomotive.type !== 'locomotive') return null;
+  
+  const { screenX, screenY } = gridToScreen(locomotive.tileX, locomotive.tileY, 0, 0);
+  
+  // Get track type for this tile
+  let trackType: TrackType = 'straight_ns';
+  if (locomotive.tileX >= 0 && locomotive.tileX < gridSize && 
+      locomotive.tileY >= 0 && locomotive.tileY < gridSize) {
+    const connections = getAdjacentRail(grid, gridSize, locomotive.tileX, locomotive.tileY);
+    trackType = getTrackType(connections);
+  }
+  
+  // Calculate track offset (same logic as drawCarriage)
+  const trackSide = getTrackSide(locomotive.direction);
+  const trackOffset = TILE_WIDTH * TRACK_SEPARATION_RATIO / 2;
+  const offsetMultiplier = trackSide === 0 ? 1 : -1;
+  
+  const centerX = screenX + TILE_WIDTH / 2;
+  const centerY = screenY + TILE_HEIGHT / 2;
+  const meta = DIRECTION_META[locomotive.direction];
+  
+  // Get perpendicular offset (same as straight track logic in drawCarriage)
+  let perpX = 0, perpY = 0;
+  let correctedMultiplier = offsetMultiplier;
+  
+  if (locomotive.direction === 'north' || locomotive.direction === 'south') {
+    perpX = ISO_EW.x;
+    perpY = ISO_EW.y;
+    correctedMultiplier = -offsetMultiplier;
+  } else {
+    perpX = ISO_NS.x;
+    perpY = ISO_NS.y;
+  }
+  
+  const offsetX = perpX * trackOffset * correctedMultiplier;
+  const offsetY = perpY * trackOffset * correctedMultiplier;
+  
+  const locoX = centerX + meta.vec.dx * locomotive.progress + offsetX;
+  const locoY = centerY + meta.vec.dy * locomotive.progress + offsetY;
+  
+  // Position smokestack at front of locomotive (offset forward in direction of travel)
+  const scale = 0.65;
+  const len = TRAIN_CAR.LOCOMOTIVE_LENGTH * scale;
+  const stackOffsetX = Math.cos(meta.angle) * len * 0.3;
+  const stackOffsetY = Math.sin(meta.angle) * len * 0.3;
+  
+  return {
+    x: locoX + stackOffsetX,
+    y: locoY + stackOffsetY - 8, // Raise it above the locomotive body
+    angle: meta.angle,
+  };
+}
+
+/**
+ * Update smoke particles for a freight train
+ */
+function updateTrainSmoke(
+  train: Train,
+  delta: number,
+  speedMultiplier: number,
+  grid: Tile[][],
+  gridSize: number,
+  isMobile: boolean
+): void {
+  // Only freight trains emit smoke
+  if (train.type !== 'freight') {
+    train.smokeParticles = [];
+    return;
+  }
+  
+  // Don't emit smoke while stopped at station
+  if (train.atStation) {
+    // Still update existing particles
+    updateExistingSmoke(train, delta, speedMultiplier);
+    return;
+  }
+  
+  const maxParticles = isMobile ? TRAIN_SMOKE_MAX_PARTICLES_MOBILE : TRAIN_SMOKE_MAX_PARTICLES;
+  const spawnInterval = isMobile ? TRAIN_SMOKE_SPAWN_INTERVAL_MOBILE : TRAIN_SMOKE_SPAWN_INTERVAL;
+  
+  // Get smokestack position
+  const stackPos = getLocomotiveSmokestackPosition(train, grid, gridSize);
+  if (!stackPos) {
+    updateExistingSmoke(train, delta, speedMultiplier);
+    return;
+  }
+  
+  // Spawn new smoke particles
+  train.smokeSpawnTimer += delta * speedMultiplier;
+  
+  while (train.smokeSpawnTimer >= spawnInterval && train.smokeParticles.length < maxParticles) {
+    train.smokeSpawnTimer -= spawnInterval;
+    
+    // Spawn with some randomness around the stack
+    const spawnX = stackPos.x + (Math.random() - 0.5) * 4;
+    const spawnY = stackPos.y + (Math.random() - 0.5) * 2;
+    
+    // Initial velocity: mostly upward with slight drift in train direction
+    const driftAngle = stackPos.angle + (Math.random() - 0.5) * 0.8;
+    const vx = Math.cos(driftAngle) * TRAIN_SMOKE_DRIFT_SPEED * 0.3 + (Math.random() - 0.5) * TRAIN_SMOKE_DRIFT_SPEED * 0.5;
+    const vy = -TRAIN_SMOKE_RISE_SPEED * (0.7 + Math.random() * 0.6);
+    
+    // Random particle properties
+    const size = TRAIN_SMOKE_PARTICLE_SIZE_MIN + Math.random() * (TRAIN_SMOKE_PARTICLE_SIZE_MAX - TRAIN_SMOKE_PARTICLE_SIZE_MIN);
+    const maxAge = TRAIN_SMOKE_PARTICLE_MAX_AGE * (0.6 + Math.random() * 0.8);
+    
+    train.smokeParticles.push({
+      x: spawnX,
+      y: spawnY,
+      vx,
+      vy,
+      age: 0,
+      maxAge,
+      size,
+      opacity: TRAIN_SMOKE_BASE_OPACITY * (0.7 + Math.random() * 0.6),
+    });
+  }
+  
+  // Reset spawn timer if at max particles
+  if (train.smokeParticles.length >= maxParticles) {
+    train.smokeSpawnTimer = 0;
+  }
+  
+  // Update existing particles
+  updateExistingSmoke(train, delta, speedMultiplier);
+}
+
+/**
+ * Update existing smoke particles (movement, aging, culling)
+ */
+function updateExistingSmoke(
+  train: Train,
+  delta: number,
+  speedMultiplier: number
+): void {
+  const adjustedDelta = delta * speedMultiplier;
+  
+  train.smokeParticles = train.smokeParticles.filter(particle => {
+    particle.age += adjustedDelta;
+    
+    if (particle.age >= particle.maxAge) {
+      return false; // Remove old particles
+    }
+    
+    // Update position
+    particle.x += particle.vx * adjustedDelta;
+    particle.y += particle.vy * adjustedDelta;
+    
+    // Apply drag (slow down horizontal drift)
+    particle.vx *= 0.98;
+    
+    // Slow down vertical rise as particle ages
+    particle.vy *= 0.995;
+    
+    // Grow particle size over time (puff expands)
+    particle.size += TRAIN_SMOKE_PARTICLE_GROWTH * adjustedDelta;
+    
+    return true;
+  });
 }
 
 // ============================================================================
@@ -1325,9 +1519,69 @@ export function drawTrains(
       
       drawCarriage(ctx, carriage, zoom, grid, gridSize, visualHour, train.id);
     }
+    
+    // Draw smoke particles for freight trains (after carriages so they appear above)
+    if (train.type === 'freight' && train.smokeParticles.length > 0) {
+      drawTrainSmoke(ctx, train, viewLeft, viewRight, viewTop, viewBottom);
+    }
   }
   
   ctx.restore();
+}
+
+/**
+ * Draw smoke particles for a freight train
+ */
+function drawTrainSmoke(
+  ctx: CanvasRenderingContext2D,
+  train: Train,
+  viewLeft: number,
+  viewRight: number,
+  viewTop: number,
+  viewBottom: number
+): void {
+  for (const particle of train.smokeParticles) {
+    // Viewport culling for particles
+    if (particle.x < viewLeft - 50 || particle.x > viewRight + 50 || 
+        particle.y < viewTop - 100 || particle.y > viewBottom + 50) {
+      continue;
+    }
+    
+    // Calculate age-based opacity (quick fade in, slow fade out)
+    const ageRatio = particle.age / particle.maxAge;
+    let ageOpacity: number;
+    if (ageRatio < 0.1) {
+      // Quick fade in
+      ageOpacity = ageRatio / 0.1;
+    } else {
+      // Slow fade out
+      ageOpacity = 1 - ((ageRatio - 0.1) / 0.9);
+    }
+    
+    const finalOpacity = particle.opacity * ageOpacity;
+    if (finalOpacity <= 0.01) continue;
+    
+    // Draw smoke particle as a soft, dark gray puff
+    // Main smoke body
+    ctx.fillStyle = `rgba(50, 50, 55, ${finalOpacity})`;
+    ctx.beginPath();
+    ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Lighter inner highlight for depth/volume
+    const innerSize = particle.size * 0.5;
+    ctx.fillStyle = `rgba(80, 80, 90, ${finalOpacity * 0.6})`;
+    ctx.beginPath();
+    ctx.arc(particle.x, particle.y - particle.size * 0.15, innerSize, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Very light wispy edge
+    const outerSize = particle.size * 1.3;
+    ctx.fillStyle = `rgba(70, 70, 75, ${finalOpacity * 0.3})`;
+    ctx.beginPath();
+    ctx.arc(particle.x, particle.y, outerSize, 0, Math.PI * 2);
+    ctx.fill();
+  }
 }
 
 // ============================================================================

@@ -416,6 +416,18 @@ export type CarriageType = 'locomotive' | 'passenger' | 'freight_box' | 'freight
 /** Train type (passenger or freight) */
 export type TrainType = 'passenger' | 'freight';
 
+/** Smoke particle for freight train locomotives */
+export type TrainSmokeParticle = {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  age: number;
+  maxAge: number;
+  size: number;
+  opacity: number;
+};
+
 /** Individual train carriage */
 export type TrainCarriage = {
   type: CarriageType;
@@ -449,4 +461,7 @@ export type Train = {
   // Station stops
   atStation: boolean;
   stationWaitTimer: number;
+  // Smoke particles for freight locomotives
+  smokeParticles: TrainSmokeParticle[];
+  smokeSpawnTimer: number;
 };

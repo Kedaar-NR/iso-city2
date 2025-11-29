@@ -32,6 +32,8 @@ export const PEDESTRIAN_UPDATE_SKIP_DISTANCE = 30;  // Skip detailed updates for
 
 // Zoom thresholds for rendering detail elements
 // Lower values = more zoomed out, higher values = more zoomed in required
+export const CAR_MIN_ZOOM = 0.4;                  // Desktop car threshold (cars hidden when very zoomed out)
+export const CAR_MIN_ZOOM_MOBILE = 0.45;          // Mobile car threshold (slightly higher for perf)
 export const PEDESTRIAN_MIN_ZOOM = 0.5;           // Desktop pedestrian threshold
 export const PEDESTRIAN_MIN_ZOOM_MOBILE = 0.55;   // Mobile pedestrian threshold (slightly higher for perf)
 export const TRAFFIC_LIGHT_MIN_ZOOM = 0.45;       // Traffic lights at intersections
@@ -94,6 +96,19 @@ export const SMOG_PARTICLE_SIZE_MAX = 20; // Maximum particle size
 export const SMOG_PARTICLE_GROWTH = 0.5; // How much particles grow per second
 export const SMOG_MAX_PARTICLES_PER_FACTORY = 25; // Maximum particles per factory to prevent memory issues
 export const SMOG_MAX_PARTICLES_PER_FACTORY_MOBILE = 12; // Lower limit on mobile
+
+// Train smoke constants (freight locomotives only)
+export const TRAIN_SMOKE_PARTICLE_MAX_AGE = 3.0; // seconds - smoke dissipates faster than factory smog
+export const TRAIN_SMOKE_SPAWN_INTERVAL = 0.12; // seconds between puffs
+export const TRAIN_SMOKE_SPAWN_INTERVAL_MOBILE = 0.25; // Less frequent on mobile
+export const TRAIN_SMOKE_DRIFT_SPEED = 15; // pixels per second horizontal drift (faster than factory)
+export const TRAIN_SMOKE_RISE_SPEED = 25; // pixels per second upward drift
+export const TRAIN_SMOKE_BASE_OPACITY = 0.4; // Higher initial opacity for visibility
+export const TRAIN_SMOKE_PARTICLE_SIZE_MIN = 4; // Smaller particles than factory
+export const TRAIN_SMOKE_PARTICLE_SIZE_MAX = 10;
+export const TRAIN_SMOKE_PARTICLE_GROWTH = 2.5; // Grows faster than factory smog
+export const TRAIN_SMOKE_MAX_PARTICLES = 15; // Max particles per train
+export const TRAIN_SMOKE_MAX_PARTICLES_MOBILE = 8;
 
 // Firework system constants
 export const FIREWORK_BUILDINGS: BuildingType[] = ['baseball_stadium', 'amusement_park', 'marina_docks_small', 'pier_large'];
