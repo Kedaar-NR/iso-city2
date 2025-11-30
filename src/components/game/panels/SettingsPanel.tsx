@@ -328,7 +328,7 @@ export function SettingsPanel() {
                           <Button
                             variant="outline"
                             size="sm"
-                            className="h-7 text-xs px-2"
+                            className="flex-1 h-7 text-xs"
                             onClick={() => {
                               setCityToRename(city);
                               setRenameValue(city.cityName);
@@ -339,7 +339,7 @@ export function SettingsPanel() {
                           <Button
                             variant="outline"
                             size="sm"
-                            className="h-7 text-xs px-2 hover:bg-destructive hover:text-destructive-foreground"
+                            className="flex-1 h-7 text-xs hover:bg-destructive hover:text-destructive-foreground"
                             onClick={() => setCityToDelete(city)}
                           >
                             Delete
