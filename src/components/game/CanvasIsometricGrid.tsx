@@ -88,6 +88,7 @@ import {
   drawRailTracksOnly,
   countRailTiles,
   isRailroadCrossing,
+  findRailroadCrossings,
   drawRailroadCrossing,
   getCrossingStateForTile,
   GATE_ANIMATION_SPEED,
@@ -201,7 +202,8 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
 
   // Railroad crossing state
   const crossingFlashTimerRef = useRef(0);
-  const crossingGateAnglesRef = useRef<Map<string, number>>(new Map()); // key = "x,y", value = angle (0=open, 90=closed)
+  const crossingGateAnglesRef = useRef<Map<number, number>>(new Map()); // key = y * gridSize + x, value = angle (0=open, 90=closed)
+  const crossingPositionsRef = useRef<{x: number, y: number}[]>([]); // Cached crossing positions for O(1) iteration
 
   // Firework system refs
   const fireworksRef = useRef<Firework[]>([]);
@@ -426,6 +428,8 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
     worldStateRef.current.gridSize = gridSize;
     // Increment grid version to invalidate cached calculations
     gridVersionRef.current++;
+    // Cache crossing positions for O(n) iteration instead of O(n²) grid scan
+    crossingPositionsRef.current = findRailroadCrossings(grid, gridSize);
   }, [grid, gridSize]);
 
   useEffect(() => {
@@ -2635,18 +2639,22 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
         drawBeachOnWater(ctx, screenX, screenY, adjacentLand);
       });
     
+    // PERF: Pre-compute tile dimensions once outside loops
+    const tileWidth = TILE_WIDTH;
+    const tileHeight = TILE_HEIGHT;
+    const halfTileWidth = tileWidth / 2;
+    const halfTileHeight = tileHeight / 2;
+    
     // Draw roads (above water, needs full redraw including base tile)
     insertionSortByDepth(roadQueue);
     roadQueue.forEach(({ tile, screenX, screenY }) => {
         // Draw road base tile first (grey diamond)
-        const w = TILE_WIDTH;
-        const h = TILE_HEIGHT;
         ctx.fillStyle = '#4a4a4a';
         ctx.beginPath();
-        ctx.moveTo(screenX + w / 2, screenY);
-        ctx.lineTo(screenX + w, screenY + h / 2);
-        ctx.lineTo(screenX + w / 2, screenY + h);
-        ctx.lineTo(screenX, screenY + h / 2);
+        ctx.moveTo(screenX + halfTileWidth, screenY);
+        ctx.lineTo(screenX + tileWidth, screenY + halfTileHeight);
+        ctx.lineTo(screenX + halfTileWidth, screenY + tileHeight);
+        ctx.lineTo(screenX, screenY + halfTileHeight);
         ctx.closePath();
         ctx.fill();
         
@@ -2664,14 +2672,12 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
     insertionSortByDepth(railQueue);
     railQueue.forEach(({ tile, screenX, screenY }) => {
         // Draw rail base tile first (dark gravel colored diamond)
-        const w = TILE_WIDTH;
-        const h = TILE_HEIGHT;
         ctx.fillStyle = '#5B6345'; // Dark gravel color for contrast with ballast
         ctx.beginPath();
-        ctx.moveTo(screenX + w / 2, screenY);
-        ctx.lineTo(screenX + w, screenY + h / 2);
-        ctx.lineTo(screenX + w / 2, screenY + h);
-        ctx.lineTo(screenX, screenY + h / 2);
+        ctx.moveTo(screenX + halfTileWidth, screenY);
+        ctx.lineTo(screenX + tileWidth, screenY + halfTileHeight);
+        ctx.lineTo(screenX + halfTileWidth, screenY + tileHeight);
+        ctx.lineTo(screenX, screenY + halfTileHeight);
         ctx.closePath();
         ctx.fill();
         
@@ -2679,9 +2685,9 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
         ctx.strokeStyle = '#4B5335';
         ctx.lineWidth = 1;
         ctx.beginPath();
-        ctx.moveTo(screenX + w / 2, screenY + h);
-        ctx.lineTo(screenX, screenY + h / 2);
-        ctx.lineTo(screenX + w / 2, screenY);
+        ctx.moveTo(screenX + halfTileWidth, screenY + tileHeight);
+        ctx.lineTo(screenX, screenY + halfTileHeight);
+        ctx.lineTo(screenX + halfTileWidth, screenY);
         ctx.stroke();
         
         // Draw the rail tracks
@@ -2701,27 +2707,43 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
     });
     
     // Draw railroad crossing signals and gates AFTER base tiles to ensure they appear on top
-    // We iterate through the roadQueue again since crossings are road tiles with rail overlay
+    // PERF: Build a Set of crossing keys for O(1) lookup instead of calling isRailroadCrossing
+    const crossingKeySet = new Set<number>();
+    const cachedCrossings = crossingPositionsRef.current;
+    for (let i = 0; i < cachedCrossings.length; i++) {
+      const { x, y } = cachedCrossings[i];
+      crossingKeySet.add(y * gridSize + x);
+    }
+    
+    // PERF: Pre-compute constants used in loop
+    const currentTrains = trainsRef.current;
+    const currentFlashTimer = crossingFlashTimerRef.current;
+    const gateAnglesMap = crossingGateAnglesRef.current;
+    
+    // Only iterate roads with rail overlay that are crossings
     roadQueue.forEach(({ tile, screenX, screenY }) => {
-      if (tile.hasRailOverlay && isRailroadCrossing(grid, gridSize, tile.x, tile.y)) {
-        const crossingKey = `${tile.x},${tile.y}`;
-        const gateAngle = crossingGateAnglesRef.current.get(crossingKey) ?? 0;
-        const crossingState = getCrossingStateForTile(trainsRef.current, tile.x, tile.y);
-        const isActive = crossingState !== 'open';
-        
-        drawRailroadCrossing(
-          ctx,
-          screenX,
-          screenY,
-          tile.x,
-          tile.y,
-          grid,
-          gridSize,
-          zoom,
-          crossingFlashTimerRef.current,
-          gateAngle,
-          isActive
-        );
+      if (tile.hasRailOverlay) {
+        // PERF: Use numeric key and Set lookup instead of isRailroadCrossing call
+        const crossingKey = tile.y * gridSize + tile.x;
+        if (crossingKeySet.has(crossingKey)) {
+          const gateAngle = gateAnglesMap.get(crossingKey) ?? 0;
+          const crossingState = getCrossingStateForTile(currentTrains, tile.x, tile.y);
+          const isActive = crossingState !== 'open';
+          
+          drawRailroadCrossing(
+            ctx,
+            screenX,
+            screenY,
+            tile.x,
+            tile.y,
+            grid,
+            gridSize,
+            zoom,
+            currentFlashTimer,
+            gateAngle,
+            isActive
+          );
+        }
       }
     });
     
@@ -2963,32 +2985,30 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
         crossingFlashTimerRef.current += delta; // Update crossing flash timer
         
         // Update railroad crossing gate angles based on train proximity
-        // Only for perpendicular crossings (not parallel rail/road)
+        // PERF: Use cached crossing positions instead of O(n²) grid scan
         const trains = trainsRef.current;
         const gateAngles = crossingGateAnglesRef.current;
         const gateSpeedMult = speed === 0 ? 0 : speed === 1 ? 1 : speed === 2 ? 2.5 : 4;
+        const crossings = crossingPositionsRef.current;
         
-        // Find all perpendicular crossings and update their gate states
-        for (let gy = 0; gy < gridSize; gy++) {
-          for (let gx = 0; gx < gridSize; gx++) {
-            // Only process perpendicular crossings (isRailroadCrossing checks both hasRailOverlay and perpendicularity)
-            if (isRailroadCrossing(grid, gridSize, gx, gy)) {
-              const key = `${gx},${gy}`;
-              const currentAngle = gateAngles.get(key) ?? 0;
-              const crossingState = getCrossingStateForTile(trains, gx, gy);
-              
-              // Determine target angle based on state
-              const targetAngle = crossingState === 'open' ? 0 : 90;
-              
-              // Animate gate toward target
-              if (currentAngle !== targetAngle) {
-                const angleDelta = GATE_ANIMATION_SPEED * delta * gateSpeedMult;
-                if (currentAngle < targetAngle) {
-                  gateAngles.set(key, Math.min(targetAngle, currentAngle + angleDelta));
-                } else {
-                  gateAngles.set(key, Math.max(targetAngle, currentAngle - angleDelta));
-                }
-              }
+        // Iterate only over known crossings (O(k) where k = number of crossings)
+        for (let i = 0; i < crossings.length; i++) {
+          const { x: gx, y: gy } = crossings[i];
+          // PERF: Use numeric key instead of string concatenation
+          const key = gy * gridSize + gx;
+          const currentAngle = gateAngles.get(key) ?? 0;
+          const crossingState = getCrossingStateForTile(trains, gx, gy);
+          
+          // Determine target angle based on state
+          const targetAngle = crossingState === 'open' ? 0 : 90;
+          
+          // Animate gate toward target
+          if (currentAngle !== targetAngle) {
+            const angleDelta = GATE_ANIMATION_SPEED * delta * gateSpeedMult;
+            if (currentAngle < targetAngle) {
+              gateAngles.set(key, Math.min(targetAngle, currentAngle + angleDelta));
+            } else {
+              gateAngles.set(key, Math.max(targetAngle, currentAngle - angleDelta));
             }
           }
         }
